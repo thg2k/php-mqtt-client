@@ -11,32 +11,55 @@ class ProtocolException
 class DataEncoder
 {
 
-  public static function uint16(int $value): string
-  {
-    return pack("n", $value);
-  }
+    public static function uint8(int $value, int $min = null, int $max = null): string
+    {
+        if (($value < 0) || ($value < ($min ?? 0)) || ($value > ($max ?? 255))) {
+            throw new DataEncoderException("Value out of range?");
+        }
 
-  public static function utf8string(string $value): string
-  {
-    $length = strlen($value);
-    if ($length > 65535)
-      throw new ProtocolException("String too long ($length, max 65535)");
+        return chr($value);
+    }
 
-    return pack("n", $length) . $value;
-  }
+    public static function uint16(int $value, int $min = null, int $max = null): string
+    {
+        if (($value < 0) || ($value < ($min ?? 0)) || ($value > ($max ?? 65535))) {
+            throw new DataEncoderException("Value out of range?");
+        }
+   
+        return pack("n", $value);
+    }
 
-  public static function varint($value): string
-  {
-    $retval = "";
-    do {
-      $byte = $value % 128;
-      $value >>= 7;
-      if ($value > 0)
-        $byte |= 0x80;
+    public static function uint32(int $value, int $min = null, int $max = null): string
+    {
+        if (($value < 0) || ($value < ($min ?? 0)) || ($value > ($max ?? 65535))) {
+            throw new DataEncoderException("Value out of range?");
+        }
 
-      $retval .= chr($byte);
-    } while ($value > 0);
+        return pack("n", $value);
+    }
 
-    return $retval;
-  }
+    
+    public static function utf8string(string $value): string
+    {
+      $length = strlen($value);
+      if ($length > 65535)
+        throw new ProtocolException("String too long ($length, max 65535)");
+
+      return pack("n", $length) . $value;
+    }
+
+    public static function varint($value): string
+    {
+      $retval = "";
+      do {
+        $byte = $value % 128;
+        $value >>= 7;
+        if ($value > 0)
+          $byte |= 0x80;
+
+        $retval .= chr($byte);
+      } while ($value > 0);
+
+      return $retval;
+    }
 }

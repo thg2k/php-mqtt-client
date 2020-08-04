@@ -120,99 +120,145 @@ class Packet_CONNECT
      */
     protected function encodeInternal(): string
     {
-        /* (header bytes 1-7) standard packet header and version */
-        $header = "\x00\x04MQTT\x05";
+        // 3.1.2  CONNECT Variable Header
 
-        /* (header byte 8) 3.1.2.3 Connect Flags */
-        $connflags = 0;
+        // 3.1.2.1  Protocol Name
+        $this->encodedHeader .= DataEncoder::utf8string("MQTT");
 
+        // 3.1.2.2  Protocol Version
+        $this->encodedHeader .= DataEncoder::byte(5);
+
+        // 3.1.2.3  Connect Flags
+        $connectionFlags = 0;
         if ($this->username !== null)
-            $connflags |= 0x80;
-
+            $connectionFlags |= 0x80;
         if ($this->password !== null)
-            $connflags |= 0x40;
+            $connectionFlags |= 0x40;
+        if ($this->will) {
+            $connectionFlags |= 0x04 |
+                ($this->will->hasRetain() << 5) |
+                ($this->will->getQoS() << 3);
+        if ($this->cleanSession)
+            $connectionFlags |= 0x02;
+        $this->encodedHeader .= DataEncoder::byte($connectionFlags);
 
-        if ($this->will)
-            $connflags |= ($this->will->hasRetain() << 5) |
-                      ($this->will->getQoS() << 3) |
-                      0x04;
+        // 3.1.2.10  Keep Alive
+        $this->encodedHeader .= DataEncoder::uint16($this->keepAlive);
 
-        if ($this->clean)
-            $connflags |= 0x02;
+        // 3.1.2.11  CONNECT Properties
 
-        $header .= chr($connflags);
-
-
-        /* (bytes 9-10) keep alive interval */
-        $header .= DataEncoder::uint16($this->keepAlive);
-
-
-        /* 3.1.2.11  CONNECT Properties */
-        $header_props = "";
-
-        /* 3.1.2.11.2  Session Expiry Interval */
-        if ($this->sessionExpiration !== null)
-            $header_props .= chr(0x11) . DataEncoder::uint32($this->sessionExpiration);
-
-        /* 3.1.2.11.3  Receive Maximum */
-        if ($this->receiveMaximum !== null)
-            $header_props .= chr(0x21) . DataEncoder::uint16($this->receiveMaximum);
-
-        /* 3.1.2.11.4  Maximum Packet Size */
-        if ($this->maximumPacketSize !== null)
-            $header_props .= chr(0x27) . DataEncoder::uint32($this->maximumPacketSize);
-
-        /* 3.1.2.11.5  Topic Alias Maximum */
-        if ($this->topicAliasMaximum !== null)
-            $header_props .= chr(0x22) . DataEncoder::uint16($this->topicAliasMaximum);
-
-        /* 3.1.2.11.6  Request Response Information */
-        if ($this->requestResponseInformation !== null)
-            $header_props .= chr(0x19) . ($this->requestResponseInformation ? chr(1) : chr(0));
-
-        /* 3.1.2.11.7  Request Problem Information */
-        if ($this->requestProblemInformation !== null)
-            $header_props .= chr(0x17) . ($this->requestProblemInformation ? chr(1) : chr(0));
-
-        /* 3.1.2.11.8  User Property */
-        foreach ($this->userProperties as $name => $value) {
-            $header_props .= chr(0x26) . DataEncoder::utf8pair($name, $value);
+        // 3.1.2.11.2  Session Expiry Interval
+        if ($this->sessionExpiration !== null) {
+            $this->encodedProperties .= chr(0x11) . DataEncoder::uint32($this->sessionExpiration);
         }
 
-        /* 3.1.2.11.9  Authentication Method */
+        // 3.1.2.11.3  Receive Maximum
+        if ($this->receiveMaximum !== null) {
+            $this->encodedProperties .= chr(0x21) . DataEncoder::uint16($this->receiveMaximum);
+        }
+
+        // 3.1.2.11.4  Maximum Packet Size
+        if ($this->maximumPacketSize !== null) {
+            $this->encodedProperties .= chr(0x27) . DataEncoder::uint32($this->maximumPacketSize);
+        }
+
+        // 3.1.2.11.5  Topic Alias Maximum
+        if ($this->topicAliasMaximum !== null) {
+            $this->encodedProperties .= chr(0x22) . DataEncoder::uint16($this->topicAliasMaximum);
+        }
+
+        // 3.1.2.11.6  Request Response Information
+        if ($this->requestResponseInformation !== null) {
+            $this->encodedProperties .= chr(0x19) . DataEncoder::byte($this->requestResponseInformation ? 1 : 0);
+        }
+
+        // 3.1.2.11.7  Request Problem Information
+        if ($this->requestProblemInformation !== null) {
+            $this->encodedProperties .= chr(0x17) . DataEncoder::byte($this->requestProblemInformation ? 1 : 0);
+        }
+
+        // 3.1.2.11.8  User Property
+        foreach ($this->userProperties as $userProperty) {
+            $this->encodedProperties .= chr(0x26) . DataEncoder::utf8pair($name, $value);
+        }
+
+        // 3.1.2.11.9  Authentication Method
         if ($this->authenticationMethod !== null) {
-            $header_props .= chr(0x15) . DataEncoder::utf8string($this->authenticationMethod);
+            $this->encodedProperties .= chr(0x15) . DataEncoder::utf8string($this->authenticationMethod);
         }
 
-        /* 3.1.2.11.10  Authentication Data */
+        // 3.1.2.11.10  Authentication Data
         if ($this->authenticationData !== null) {
-            $header_props .= chr(0x16) . DataEncoder::binary($this->authenticationData);
+            $this->encodedProperties .= chr(0x16) . DataEncoder::binary($this->authenticationData);
         }
 
+        // 3.1.3  CONNECT Payload
 
-        /* wrapping up header properties */
-        $header .= DataEncoder::varint(strlen($header_props)) . $header_props;
+        // 3.1.3.1  Client Identifier (ClientID)
+        $this->encodedPayload .= DataEncoder::utf8string($this->clientId());
 
+        // 3.1.3.2  Will Properties
+        if ($this->will) {
+            $encodedWillProperties = "";
 
-        /* 3.1.3  CONNECT Payload */
-        $payload = "";
+            // 3.1.3.2.2  Will Delay Interval
+            if ($this->willDelay !== null) {
+                $encodedWIllProperties .= chr(0x18) . DataEncoder::uint32($this->willDelay);
+            }
 
-        /* 3.1.3.1  Client Identifier (ClientID) */
-        $payload .= DataEncoder::utf8string($this->clientId());
+            // 3.1.3.2.3  Payload Format Indicator
+            if ($this->will->formatIndicator !== null) {
+                $encodedWillProperties .= chr(0x01) . DataEncoder(0); // FIXME
+            }
 
-        // FIXME: will properties ??
+            // 3.1.3.2.4  Message Expiry Interval
+            if ($this->will->expiration !== null) {
+                $encodedWillProperties .= chr(0x02) . DataEncoder::uint32($this->will->expiration);
+            }
 
-        /* 3.1.3.5  User Name */
+            // 3.1.3.2.5  Content Type
+            if ($this->will->contentType !== null) {
+                $encodedWillProperties .= chr(0x03) . DataEncoder::utf8string($this->will->contentType);
+            }
+
+            // 3.1.3.2.6  Response Topic
+            if ($this->will->responseTopic !== null) {
+                $encodedWillProperties .= chr(0x08) . DataEncoder::utf8string($this->will->responseTopic);
+            }
+
+            // 3.1.3.2.7  Correlation Data
+            if ($this->will->correlationData !== null) {
+                $encodedWillProperties .= chr(0x09) . DataEncoder::binary($this->will->correlationData);
+            }
+
+            // 3.1.3.2.8  User Property
+            foreach ($this->will->userProperties as $userProperty) {
+                $encodedWillProperties .= chr(0x26) . DataEncoder::utf8pair(
+                    (string) ($userProperty[0] ?? null),
+                    (string) ($userProperty[1] ?? null));
+            }
+        }
+        $this->encodedPayload .= DataEncoder::varint(strlen($encodedWillProperties)) . $encodedWillProperties;
+
+        // 3.1.3.3  Will Topic
+        if ($this->will) {
+          $this->encodedPayload .= DataEncoder::utf8string($this->will->topic);
+        }
+
+        // 3.1.3.4  Will Payload
+        if ($this->will) {
+          $this->encodedPayload .= DataEncoder::binary($this->will->payload);
+        }
+
+        // 3.1.3.5  User Name
         if ($this->username !== null) {
-            $payload .= DataEncoder::utf8string($this->username);
+            $this->encodedPayload .= DataEncoder::utf8string($this->username);
         }
 
-        /* 3.1.3.6  Password */
+        // 3.1.3.6  Password
         if ($this->password !== null) {
-            $payload .= DataEncoder::utf8string($this->password);
+            $this->encodedPayload .= DataEncoder::binary($this->password);
         }
-
-        return $header . $payload;
     }
 
     /**
