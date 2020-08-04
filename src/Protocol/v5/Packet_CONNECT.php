@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace PhpMqtt\Protocol\v5;
 
-use PhpMqtt\Protocol\Packet;
-use PhpMqtt\Protocol\Message;
 use PhpMqtt\Protocol\DataEncoder;
 use PhpMqtt\Protocol\DataDecoder;
+use PhpMqtt\Protocol\Message;
 
 /**
  * MQTT v5.0 - Client request to connect to Server
@@ -120,13 +119,17 @@ class Packet_CONNECT
      */
     protected function encodeInternal(): string
     {
+        // 3.1.1  CONNECT Fixed Header
+        // Nothing to do.
+
         // 3.1.2  CONNECT Variable Header
+        $this->encodedHeader = new DataEncoder();
 
         // 3.1.2.1  Protocol Name
-        $this->encodedHeader .= DataEncoder::utf8string("MQTT");
+        $this->encodedHeader->utf8string("MQTT");
 
         // 3.1.2.2  Protocol Version
-        $this->encodedHeader .= DataEncoder::byte(5);
+        $this->encodedHeader->byte(5);
 
         // 3.1.2.3  Connect Flags
         $connectionFlags = 0;
@@ -140,62 +143,64 @@ class Packet_CONNECT
                 ($this->will->getQoS() << 3);
         if ($this->cleanSession)
             $connectionFlags |= 0x02;
-        $this->encodedHeader .= DataEncoder::byte($connectionFlags);
+        $this->encodedHeader->byte($connectionFlags);
 
         // 3.1.2.10  Keep Alive
-        $this->encodedHeader .= DataEncoder::uint16($this->keepAlive);
+        $this->encodedHeader->uint16($this->keepAlive);
 
         // 3.1.2.11  CONNECT Properties
+        $this->encodedProperties = new DataEncoder();
 
         // 3.1.2.11.2  Session Expiry Interval
         if ($this->sessionExpiration !== null) {
-            $this->encodedProperties .= chr(0x11) . DataEncoder::uint32($this->sessionExpiration);
+            $this->encodedProperties->byte(0x11)->uint32($this->sessionExpiration);
         }
 
         // 3.1.2.11.3  Receive Maximum
         if ($this->receiveMaximum !== null) {
-            $this->encodedProperties .= chr(0x21) . DataEncoder::uint16($this->receiveMaximum);
+            $this->encodedProperties->byte(0x21)->uint16($this->receiveMaximum);
         }
 
         // 3.1.2.11.4  Maximum Packet Size
         if ($this->maximumPacketSize !== null) {
-            $this->encodedProperties .= chr(0x27) . DataEncoder::uint32($this->maximumPacketSize);
+            $this->encodedProperties->byte(0x27)->uint32($this->maximumPacketSize);
         }
 
         // 3.1.2.11.5  Topic Alias Maximum
         if ($this->topicAliasMaximum !== null) {
-            $this->encodedProperties .= chr(0x22) . DataEncoder::uint16($this->topicAliasMaximum);
+            $this->encodedProperties->byte(0x22)->uint16($this->topicAliasMaximum);
         }
 
         // 3.1.2.11.6  Request Response Information
         if ($this->requestResponseInformation !== null) {
-            $this->encodedProperties .= chr(0x19) . DataEncoder::byte($this->requestResponseInformation ? 1 : 0);
+            $this->encodedProperties->byte(0x19)->byte($this->requestResponseInformation ? 1 : 0);
         }
 
         // 3.1.2.11.7  Request Problem Information
         if ($this->requestProblemInformation !== null) {
-            $this->encodedProperties .= chr(0x17) . DataEncoder::byte($this->requestProblemInformation ? 1 : 0);
+            $this->encodedProperties->byte(0x17)->byte($this->requestProblemInformation ? 1 : 0);
         }
 
         // 3.1.2.11.8  User Property
         foreach ($this->userProperties as $userProperty) {
-            $this->encodedProperties .= chr(0x26) . DataEncoder::utf8pair($name, $value);
+            $this->encodedProperties->byte(0x26)->utf8pair($name, $value);
         }
 
         // 3.1.2.11.9  Authentication Method
         if ($this->authenticationMethod !== null) {
-            $this->encodedProperties .= chr(0x15) . DataEncoder::utf8string($this->authenticationMethod);
+            $this->encodedProperties->byte(0x15)->utf8string($this->authenticationMethod);
         }
 
         // 3.1.2.11.10  Authentication Data
         if ($this->authenticationData !== null) {
-            $this->encodedProperties .= chr(0x16) . DataEncoder::binary($this->authenticationData);
+            $this->encodedProperties->byte(0x16)->binary($this->authenticationData);
         }
 
         // 3.1.3  CONNECT Payload
+        $this->encodedPayload = new DataEncoder();
 
         // 3.1.3.1  Client Identifier (ClientID)
-        $this->encodedPayload .= DataEncoder::utf8string($this->clientId());
+        $this->encodedPayload->utf8string($this->clientId());
 
         // 3.1.3.2  Will Properties
         if ($this->will) {
@@ -207,12 +212,21 @@ class Packet_CONNECT
             }
 
             // 3.1.3.2.3  Payload Format Indicator
-            if ($this->will->formatIndicator !== null) {
-                $encodedWillProperties .= chr(0x01) . DataEncoder(0); // FIXME
+            if ($this->will->getFormat() != 0) {
+                // The format defaults to zero (binary), and the Message
+                // implementation does not distinguish between zero and
+                // undefined (by choice).
+                // Differently from the rest of the implementation, this voids
+                // the 1:1 relation between the binary representation and the logical one, but I consider
+                // it reasonable and acceptable.
+                // Also, even thought it would be nice to have 1:1 to self-test the protocol, the order of the
+                // properties is free, so it wouldn't work anyway
+                // FIXME: move this long essay to a more appropriate spot (Protocol class?)
+                $encodedWillProperties .= chr(0x01) . DataEncoder::byte($this->will->getFormat());
             }
 
             // 3.1.3.2.4  Message Expiry Interval
-            if ($this->will->expiration !== null) {
+            if ($this->willExpiration !== null) {
                 $encodedWillProperties .= chr(0x02) . DataEncoder::uint32($this->will->expiration);
             }
 
@@ -242,22 +256,22 @@ class Packet_CONNECT
 
         // 3.1.3.3  Will Topic
         if ($this->will) {
-          $this->encodedPayload .= DataEncoder::utf8string($this->will->topic);
+            $this->encodedPayload->utf8string($this->will->topic);
         }
 
         // 3.1.3.4  Will Payload
         if ($this->will) {
-          $this->encodedPayload .= DataEncoder::binary($this->will->payload);
+            $this->encodedPayload->binary($this->will->payload);
         }
 
         // 3.1.3.5  User Name
         if ($this->username !== null) {
-            $this->encodedPayload .= DataEncoder::utf8string($this->username);
+            $this->encodedPayload->utf8string($this->username);
         }
 
         // 3.1.3.6  Password
         if ($this->password !== null) {
-            $this->encodedPayload .= DataEncoder::binary($this->password);
+            $this->encodedPayload->binary($this->password);
         }
     }
 

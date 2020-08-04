@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace PhpMqtt\Protocol\v3;
+namespace PhpMqtt\Protocol\v5;
 
-use PhpMqtt\Protocol\Packet;
+use PhpMqtt\Protocol\DataEncoder;
+use PhpMqtt\Protocol\DataDecoder;
 
 /**
  * MQTT v5.0 - Client request to connect to Server
