@@ -23,54 +23,10 @@ abstract class Packet
      */
     const TYPE = 0;
 
-    /**
-     * ...
-     *
-     * @var bool
-     */
-    public $dup = false;
 
-    /**
-     * ...
-     *
-     * @var int
-     */
-    public $qos = Protocol::QOS_AT_MOST_ONCE;
+    // abstract protected function encodeInternal(): string;
 
-    /**
-     * ...
-     *
-     * @var bool
-     */
-    public $retain = false;
-
-
-    public static function decode(): Packet
-    {
-    }
-
-
-    public function __construct()
-    {
-    }
-
-
-    public function encode(): string
-    {
-        $packet = $this->encodeInternal();
-
-        /* add first byte and packet size */
-        $firstbyte = (static::TYPE << 4) |         // Packet type
-                     ($this->dup ? 0x08 : 0) |     // DUP flag
-                     ($this->qos & 0x03 << 1) |    // QoS flags
-                     ($this->retain ? 0x01 : 0);   // Retain flag
-
-        return chr($firstbyte) . DataEncoder::varint(strlen($packet)) . $packet;
-    }
-
-    abstract protected function encodeInternal(): string;
-
-    abstract protected function decodeInternal(string $data): void;
+    // abstract protected function decodeInternal(string $data): void;
 
     public function __set($name, $value)
     {
@@ -83,11 +39,11 @@ abstract class Packet
         return $props;
     }
 
-    public function __toString()
-    {
-        return "[packet " . basename(get_class($this)) . "]" .
-            ($this->dup ? " [DUP]" : "") .
-            ($this->qos ? " [QoS " . $this->qos . "]" : "") .
-            ($this->retain ? " [RETAIN]" : "") . "\n" . json_encode($this, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-    }
+    // public function __toString()
+    // {
+        // return "[packet " . basename(get_class($this)) . "]" .
+            // ($this->dup ? " [DUP]" : "") .
+            // ($this->qos ? " [QoS " . $this->qos . "]" : "") .
+            // ($this->retain ? " [RETAIN]" : "") . "\n" . json_encode($this, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    // }
 }

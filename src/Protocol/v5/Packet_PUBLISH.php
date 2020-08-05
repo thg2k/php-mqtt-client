@@ -8,7 +8,7 @@ use PhpMqtt\Protocol\DataEncoder;
 use PhpMqtt\Protocol\DataDecoder;
 
 /**
- * MQTT v5.0 - Client request to connect to Server
+ * MQTT v5.0 - Publish message packet
  */
 class Packet_PUBLISH
         extends Packet
@@ -16,7 +16,7 @@ class Packet_PUBLISH
     /**
      * Message type enumeration
      */
-    const TYPE = 1;
+    const TYPE = 3;
 
     /**
      * Duplicate packet
@@ -40,6 +40,13 @@ class Packet_PUBLISH
     public $retain = false;
 
     /**
+     * Packet identifier
+     *
+     * @var ?int
+     */
+    public $packetIdentifier;
+
+    /**
      * Topic
      *
      * @var string
@@ -47,46 +54,67 @@ class Packet_PUBLISH
     public $topic = "";
 
     /**
-     * Client username
-     *
-     * @var ?string = null;
-     */
-    public $username = null;
-
-    /**
-     * Client password
-     *
-     * @var ?string
-     */
-    public $password = null;
-
-    /**
-     * Clean session flag
-     *
-     * @var bool
-     */
-    public $cleanSession = false;
-
-    /**
-     * Last will message
-     *
-     * @var ?Message
-     */
-    public $will = null;
-
-    /**
-     * Keep alive interval
+     * Message format
      *
      * @var ?int
      */
-    public $keepAlive = null;
+    public $messageFormat;
 
     /**
-     * ...
+     * Message expiration
+     *
+     * @var ?int
+     */
+    public $messageExpiration;
+
+    /**
+     * Topic alias
+     *
+     * @var ?int
+     */
+    public $topicAlias;
+
+    /**
+     * Response topic
+     *
+     * @var ?string
+     */
+    public $responseTopic;
+
+    /**
+     * Correlation data
+     *
+     * @var ?string
+     */
+    public $correlationData;
+
+    /**
+     * User properties
+     *
+     * @var array<array<string>>
+     */
+    public $userProperties = array();
+
+    /**
+     * List of subscription identifiers
+     *
+     * @var array<int>
+     */
+    public $subscriptionIdentifiers = array();
+
+    /**
+     * Content type
+     *
+     * @var ?string
+     */
+    public $contentType;
+
+    /**
+     * Content
      *
      * @var string
      */
-    public $clientId = "";
+    public $content = "";
 
     /**
      * @inheritdoc
@@ -106,7 +134,7 @@ class Packet_PUBLISH
         $this->encodedHeader->utf8string($this->topic);
 
         // 3.3.2.2  Packet Identifier
-        if ($this->qos & 0x03) {
+        if ($this->qos) {
             $this->encodedHeader->uint16($this->packetIdentifier);
         }
 
@@ -135,74 +163,34 @@ class Packet_PUBLISH
 
         // 3.3.2.3.6  Correlation Data
         if ($this->correlationData !== null) {
-            $this->encodedProperties .= chr(0x09) . DataEncoder::binary($this->message->correlationData);
+            $this->encodedProperties->byte(0x09)->binary($this->correlationData);
         }
 
         // 3.3.2.3.7  User Property
-        foreach ($this->message->getUserProperties() as $userProperty) {
-            $this->encodedProperties .= chr(0x26) . DataEncode::utf8pair($userProperty['key'], $userProperty['value']);
+        foreach ($this->userProperties as $userProperty) {
+            $this->encodedProperties->byte(0x26)->utf8pair(
+                (string) ($userProperty[0] ?? null),
+                (string) ($userProperty[1] ?? null));
         }
 
         // 3.3.2.3.8  Subscription Identifier
-        foreach ($this->message->
-        /* (byte 8) connect flags */
-        $flags = 0;
-        if ($this->username !== null)
-            $flags |= 0x80;
-        if ($this->password !== null)
-            $flags |= 0x40;
-        if ($this->will)
-            $flags |= ($this->will->hasRetain() << 5) |
-                      ($this->will->getQoS() << 3) |
-                      0x04;
-        if ($this->clean)
-            $flags |= 0x02;
-        $header .= chr($flags);
-
-        /* (bytes 9-10) keep alive interval */
-        $header .= DataEncoder::uint16($this->keepAlive);
-
-        /* (payload) client id */
-        // if ((strlen($this->clientId) < 1) ||
-            // (strlen($this->clientId) > 32))
-          // throw new ProtocolException("Client ID length must 1-32 bytes long");
-        $pkt_payload .= DataEncoder::utf8string($this->clientId);
-
-        /* (payload) username */
-        if ($this->username !== null)
-            $pkt_payload .= DataEncoder::utf8string($this->username);
-
-        /* (payload) password */
-        if ($this->password !== null)
-            $pkt_payload .= DataEncoder::utf8string($this->password);
-
-        /* (payload) will topic and message */
-        if ($this->will !== null) {
-            $pkt_payload .= DataEncoder::utf8string($this->will->getTopic());
-            $pkt_payload .= DataEncoder::utf8string($this->will->getMessage());
+        foreach ($this->subscriptionIdentifiers as $subscriptionIdentifier) {
+            $this->encodedProperties->byte(0x0b)->varint($subscriptionIdentifier);
         }
 
-        foreach ($this->userProperties as $name => $value) {
-            $pkt_props .= chr(0x26) . DataEncoder::utf8pair($name, $value);
-        }
-
-        /* 3.3.2.3.8  Subscription Identifier */
-        if ($this->subscriptionId !== null) {
-            assert($this->subscriptionId >= 1);
-            assert($this->subscriptionId <= 268435455);
-            $pkt_props .= chr(0x0b) . DataEncoder::varint($this->subscriptionId);
-        }
-
-        /* 3.3.2.3.9  Content Type */
+        // 3.3.2.3.9  Content Type
         if ($this->contentType !== null) {
-            // FIXME: is it legit to send empty string?
-            $pkt_props .= chr(0x03) . DataEncoder::utf8string($this->contentType);
+            $this->encodedProperties->byte(0x03)->utf8string($this->contentType);
         }
 
-
-        return $header . $payload
+        // 3.3.3  PUBLISH Payload
+        $this->encodedPayload = new DataEncoder();
+        $this->encodedPayload->raw($this->content);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function decodeInternal(DataDecoder $packet): void
     {
         // 3.3.1  PUBLISH Fixed Header
@@ -228,8 +216,8 @@ class Packet_PUBLISH
 
             // 3.3.2.3.2  Payload Format Indicator
             case 0x01:
-                $this->assertNullProperty($this->formatIndicator, 'Payload Format Indicator');
-                $this->formatIndicator =
+                $this->assertNullProperty($this->messageFormat, 'Payload Format Indicator');
+                $this->messageFormat =
                     $this->assertIntegerValue($packet->byte(), 0, 1, 'Payload Format Indicator');
                 break;
 
@@ -257,18 +245,19 @@ class Packet_PUBLISH
             // 3.3.2.3.6  Correlation Data
             case 0x09:
                 $this->assertNullProperty($this->correlationData, 'Correlation Data');
-                $this->correlationData = $packet->binary();
+                $this->correlationData =
+                    $packet->binary();
                 break;
 
             // 3.3.2.3.7  User Property
             case 0x26:
-                $this->userProperties[] = $packet->utf8pair();
+                $this->userProperties[] =
+                    $packet->utf8pair();
                 break;
 
             // 3.3.2.3.8  Subscription Identifier
             case 0x0b:
-                $this->assertNullProperty($this->subscriptionIdentifier, 'Subscription Identifier');
-                $this->subscriptionIdentifier =
+                $this->subscriptionIdentifiers[] =
                     $packet->varint();
                 break;
 
@@ -280,6 +269,8 @@ class Packet_PUBLISH
                 break;
 
             default: // FIXME ?
+                throw new MalformedPacketException(sprintf("Invalid property id '0x%02x'", $propId));
+            }
         }
         $packet->chunkRelease();
 

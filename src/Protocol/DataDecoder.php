@@ -96,7 +96,7 @@ class DataDecoder
             $this->ptr = $this->size;
         }
 
-        if ((strlen($this->buffer) - $this->ptr) < $bytes) {
+        if (($this->size - $this->ptr) < $bytes) {
             throw new BufferOverrunException("raw:$bytes");
         }
 
@@ -145,13 +145,13 @@ class DataDecoder
             $step++;
         } while ($byte & 0x80);
 
-        if (($min !== null) && ($value < $min)) {
-            throw new DataAssertionException("Invalid value '$value', min is $min");
-        }
+        // if (($min !== null) && ($value < $min)) {
+            // throw new DataAssertionException("Invalid value '$value', min is $min");
+        // }
 
-        if (($max !== null) && ($value > $max)) {
-            throw new DataAssertionException("Invalid value '$value', max is $max");
-        }
+        // if (($max !== null) && ($value > $max)) {
+            // throw new DataAssertionException("Invalid value '$value', max is $max");
+        // }
 
         return $value;
     }
@@ -194,7 +194,7 @@ class DataDecoder
      *
      * ...
      */
-    public static function uint32(): int
+    public function uint32(): int
     {
         if (($this->size - $this->ptr) < 4) {
             throw new BufferOverrunException("uint32");

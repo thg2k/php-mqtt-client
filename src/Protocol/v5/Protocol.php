@@ -10,6 +10,8 @@ use PhpMqtt\Protocol\Packet;
 class Protocol
         extends ProtocolAbstract
 {
+    public $strictMode = true;
+
     public function packet(string $type): Packet
     {
         switch ($type) {

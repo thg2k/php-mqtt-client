@@ -7,7 +7,7 @@ namespace PhpMqtt\Protocol\v3;
 use PhpMqtt\Protocol\Packet;
 
 /**
- * MQTT v5.0 - Client request to connect to Server
+ * MQTT v5.0 - Disconnect notification packet
  */
 class Packet_DISCONNECT
         extends Packet
@@ -22,28 +22,7 @@ class Packet_DISCONNECT
      *
      * @var int
      */
-    public $reasonCode = 0x00;
-
-    /**
-     * Session expiration in seconds
-     *
-     * @var ?int
-     */
-    public $sessionExpiryInterval;
-
-    /**
-     * Reason string
-     *
-     * @var ?string
-     */
-    public $reasonString;
-
-    /**
-     * User properties
-     *
-     * @var array<array<string>>
-     */
-    public $userProperties;
+    public $reasonCode = 0;
 
     /**
      * Server reference
@@ -53,49 +32,70 @@ class Packet_DISCONNECT
     public $serverReference;
 
     /**
+     * Session expiration in seconds
+     *
+     * @var ?int
+     */
+    public $sessionExpiration;
+
+    /**
+     * Reason string
+     *
+     * @var ?string
+     */
+    public $reasonMessage;
+
+    /**
+     * User properties
+     *
+     * @var array<array<string>>
+     */
+    public $userProperties;
+
+    /**
      * @inheritdoc
      */
     protected function encodeInternal(): string
     {
-        /// 3.14.2  DISCONNECT Variable Header
-        // $this->_encoded_header = "";
+        // 3.14.1  DISCONNECT Fixed Header
+        // Empty.
+
+        // 3.14.2  DISCONNECT Variable Header
+        $this->encodedHeader = new DataEncoder();
 
         // 3.14.2.1  Disconnect Reason Code
-        $this->encodedHeader .= DataEncoder::byte($this->reasonCode);
+        $this->encodedHeader->byte($this->reasonCode);
 
         // 3.14.2.2  DISCONNECT Properties
-        // $this->_encoded_props = "";
+        $this->encodedProperties = new DataEncoder();
 
         // 3.14.2.2.2  Session Expiry Interval
-        if ($this->sessionExpiryInterval !== null) {
-            $this->encodedProperties .= chr(0x11) . DataEncoder::uint32($this->sessionExpiryInterval);
+        if ($this->sessionExpiration !== null) {
+            $this->encodedProperties->byte(0x11)->uint32($this->sessionExpiration);
+        }
+
+        // 3.14.2.2.5  Server Reference
+        if ($this->serverReference !== null) {
+            $this->encodedProperties->byte(0x1c)->utf8string($this->serverReference);
         }
 
         // 3.14.2.2.3  Reason String
-        $this->markDiscardableProperty();
+        // #discardable
         if ($this->reasonString !== null) {
-            $props .= chr(0x1f) . DataEncoder::utf8string($this->reasonString);
+            $this->markDiscardableProperty();
+            $this->encodedProperties->byte(0x1f)->utf8string($this->reasonString);
         }
 
         // 3.14.2.2.4  User Property
         $this->markDiscardableProperty();
         foreach ($this->userProperties as $userProperty) {
-            $props .= chr(0x26) . DataEncoder::utf8pair(
+            $this->encodedProperties->byte(0x26)->utf8pair(
                 (string) ($userProperty[0] ?? null),
                 (string) ($userProperty[1] ?? null));
         }
 
-        // 3.14.2.2.5  Server Reference
-        $this->markDiscardableProperty($props);
-        if ($this->serverReference !== null) {
-            $props .= chr(0x1c) . DataEncoder::utf8string($this->serverReference);
-        }
-        $this->protocol->assemblyPacketOptionalProps($props);
-
         // 3.14.3  DISCONNECT Payload
-        $payload = "";
-
-        return $this->packetAssembly($header, $props, $payload);
+        // Empty.
     }
 
     /**
@@ -103,30 +103,53 @@ class Packet_DISCONNECT
      */
     protected function decodeInternal(string $packet): void
     {
-        $this->reasonCode = DataDecoder::byte($packet);
+        // 3.14.1  DISCONNECT Fixed Header
+        if (Protocol::$strictMode && ($this->packetFlags != 0)) {
+            throw new MalformedPacketException("Invalid packet flags");
+        }
 
-        $propsLength = DataDecoder::varint($packet);
-        $props = DataDecoder::raw($packet, $propsLength);
+        // 3.14.2  DISCONNECT Variable Header
 
-        while (strlen($props) > 0) {
-            $propId = DataDecoder::byte($props);
+        // 3.14.2.1  Disconnect Reason Code
+        $this->reasonCode = $packet->byte();
+
+        // 3.14.2.2  DISCONNECT Properties
+        $propsLength = $packet->varint();
+        $packet->chunkSet($propsLength);
+
+        while ($packet->remaining()) {
+            $propId = $packet->byte();
             switch ($propId) {
+
+            // 3.14.2.2.2  Session Expiry Interval
             case 0x11:
-                if ($this->sessionExpiryInterval !== null)
-                    throw new MalformedPacketException("Duplicated property 'sessionExpiryInterval'");
-                $this->sessionExpiryInterval = DataDecoder::uint32($packet);
+                $this->assertNullProperty($this->sessionExpiration, 'Session Expiry Interval');
+                $this->sessionExpiration = $packet->uint32();
                 break;
 
+            // 3.14.2.2.3  Reason String
             case 0x1f:
-                if ($this->reasonString !== null)
-                    throw new MalformedPacketException("Duplicated property 'reasonString'");
-                $this->reasonString = DataDecoder::utf8string($packet);
+                $this->assertNullProperty($this->reasonMessage, 'Reason String');
+                $this->reasonMessage = $packet->utf8string();
                 break;
 
+            // 3.14.2.2.4  User Property
             case 0x26:
-                $this->_userProperties[] = DataDecoder::utf8pair($packet);
+                $this->userProperties[] = $packet->utf8pair();
                 break;
+
+            // 3.14.2.2.5  Server Reference
+            case 0x1c:
+                $this->assertNullProperty($this->serverReference, 'Server Reference');
+                $this->serverReference = $packet->utf8string();
+                break;
+
+            default:
+                // FIXME: bad?
             }
         }
+
+        // 3.14.3  DISCONNECT Payload
+        // FIXME: assert empty?
     }
 }

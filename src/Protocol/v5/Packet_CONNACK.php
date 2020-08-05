@@ -32,6 +32,14 @@ class Packet_CONNACK
      */
     public $reasonCode = 0;
 
+    public $sessionExpiration;
+
+    public $receiveMaximum;
+
+    public $maximumQoS;
+
+    public $retainAvailable;
+
     /**
      * @inheritdoc
      */
@@ -175,7 +183,7 @@ class Packet_CONNACK
         $packet->chunkSet($propsLength);
 
         while ($packet->remaining() > 0) {
-            $propId = $packet->byte($props);
+            $propId = $packet->byte();
             switch ($propId) {
 
             // 3.2.2.3.2  Session Expiry Interval
